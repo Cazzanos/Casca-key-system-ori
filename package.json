@@ -1,7 +1,7 @@
 {
   "name": "Casca-key-system-ori",
   "version": "1.0.0",
-  "description": "A Node.js key system server",
+  "description": "Key system server for managing keys and blacklist",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -11,7 +11,8 @@
     "body-parser": "^1.19.0",
     "uuid": "^9.0.0",
     "moment-timezone": "^0.5.34",
-    "fs": "0.0.1-security"
+    "fs": "0.0.1-security",
+    "mongoose": "^5.10.9"
   },
   "engines": {
     "node": ">=14"

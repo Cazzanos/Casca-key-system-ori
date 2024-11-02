@@ -1,12 +1,19 @@
 {
-  "name": "my-vercel-app",
+  "name": "Casca-key-system-ori",
   "version": "1.0.0",
+  "description": "A Node.js key system server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.17.1",
-    "uuid": "^9.0.0"   // Adaugă uuid aici
+    "body-parser": "^1.19.0",
+    "uuid": "^9.0.0",
+    "moment-timezone": "^0.5.34",
+    "fs": "0.0.1-security"
+  },
+  "engines": {
+    "node": ">=14"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "Casca-key-system-ori",
+  "name": "the basement key system",
   "version": "1.0.0",
   "description": "Key system server for managing keys and blacklist",
   "main": "server.js",

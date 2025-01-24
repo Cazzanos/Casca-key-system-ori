@@ -184,48 +184,93 @@ app.get('/', (req, res) => {
                     <h1>You have been blacklisted.</h1>
                     <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
                     <p>Duration: Indefinite</p>
-                    <p>Blacklist ID: ${blacklisted.blacklistId}</p> <!-- Afișează blacklistId -->
+                    <p>Blacklist ID: ${blacklisted.blacklistId || 'N/A'}</p>
                 </div>
             </body>
             </html>
         `);
-    } else {
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Basement Hub Key System</title>
-                <style>
-                    body {
-                        background: linear-gradient(to top, #003366, white);
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                    }
-                    h1 { color: #fff; }
-                    a {
-                        background-color: #0056b3;
-                        color: white;
-                        padding: 10px 20px;
-                        text-decoration: none;
-                        border-radius: 5px;
-                        font-size: 16px;
-                    }
-                    a:hover { background-color: #003d80; }
-                </style>
-            </head>
-            <body>
-                <div>
-                    <h1>Welcome to Basement Hub Key System</h1>
-                    <a href="/redirect-to-linkvertise">Generate a Key</a>
-                </div>
-            </body>
-            </html>
-        `);
+        return;
     }
+
+    // Pagina principală
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Basement Hub Key System</title>
+            <style>
+                body {
+                    background: linear-gradient(to top, #003366, white);
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    padding: 20px;
+                    height: 100vh;
+                    margin: 0;
+                }
+                h1 { color: #fff; margin-bottom: 20px; }
+                .button {
+                    background-color: #0056b3;
+                    color: white;
+                    padding: 10px 20px;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    font-size: 16px;
+                    margin: 10px 0;
+                    cursor: pointer;
+                    text-align: center;
+                    display: inline-block;
+                }
+                .button:hover { background-color: #003d80; }
+                .info-box {
+                    background-color: #1d1d1d;
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin-top: 20px;
+                    text-align: center;
+                    width: 80%;
+                }
+                .info-box p { margin: 10px 0; }
+                .discord-icon {
+                    position: fixed;
+                    bottom: 20px;
+                    text-align: center;
+                    cursor: pointer;
+                }
+                .discord-icon img {
+                    width: 50px;
+                    height: 50px;
+                    border-radius: 50%;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Welcome to Basement Hub Key System</h1>
+            <a href="/redirect-to-linkvertise" class="button">Generate a Key</a>
+            <div class="info-box">
+                <p><strong>Script:</strong></p>
+                <p><code>loadstring(game:HttpGet("https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub", true))()</code></p>
+                <button class="button" onclick="navigator.clipboard.writeText('loadstring(game:HttpGet(\\'https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub\\', true))()')">Copy Script</button>
+                <p><strong>Supported Games:</strong></p>
+                <ul>
+                    <li>Life in Prison</li>
+                    <li>SL Prison</li>
+                    <li>War Tycoon</li>
+                    <li>Fisch</li>
+                    <li>Bloxfruit</li>
+                    <li>Arm Wrestling Simulator</li>
+                    <li>Bee Swarm Simulator</li>
+                    <li>Universal Script</li>
+                </ul>
+            </div>
+            <div class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'">
+                <img src="https://cdn.discordapp.com/icons/123456789123456789/abcdef123456789abcdef.png" alt="Discord">
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 // Redirecționare către Linkvertise
@@ -237,14 +282,29 @@ app.get('/redirect-to-linkvertise', (req, res) => {
 
 function antiBypass(req, res, next) {
     const referer = req.get('Referer');
+    const ip = getClientIp(req);
+    const blacklist = loadData(BLACKLIST_FILE);
+
+    // Verifică dacă utilizatorul a venit de la Linkvertise
     if (referer && referer.includes("linkvertise.com")) {
-        return next(); // Allow if redirected from Linkvertise
+        return next(); // Permite accesul
     }
 
-    // Render anti-bypass message directly here
-    const ip = getClientIp(req);
-    blacklistIp(ip, 'Tried to bypass the key system'); // Blacklist the IP
-    
+    // Adaugă utilizatorul pe blacklist dacă nu există deja
+    let blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip);
+    if (!blacklisted) {
+        blacklisted = {
+            type: 'ip',
+            value: ip,
+            reason: 'Tried to bypass the key system',
+            expiry: 'permanent',
+            blacklistId: `BL-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
+        };
+        blacklist.push(blacklisted);
+        saveData(BLACKLIST_FILE, blacklist);
+    }
+
+    // Mesaj anti-bypass
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -261,14 +321,8 @@ function antiBypass(req, res, next) {
                     font-family: Arial, sans-serif;
                     text-align: center;
                 }
-                h1 {
-                    font-size: 3rem;
-                    margin: 0;
-                }
-                p {
-                    font-size: 1.2rem;
-                    margin-top: 10px;
-                }
+                h1 { font-size: 3rem; margin: 0; }
+                p { font-size: 1.2rem; margin-top: 10px; }
             </style>
         </head>
         <body>

@@ -14,9 +14,10 @@ app.use(express.static('public'));
 const KEYS_FILE = path.join(__dirname, 'keys.json');
 const BLACKLIST_FILE = path.join(__dirname, 'blacklist.json');
 const NOTIFICATIONS_FILE = path.join(__dirname, 'notifications.json');
+const proggress = path.join(__dirname, 'progress.json');
 
 // Verifică dacă fișierele există, dacă nu, creează-le
-[KEYS_FILE, BLACKLIST_FILE, NOTIFICATIONS_FILE].forEach(file => {
+[KEYS_FILE, BLACKLIST_FILE, progress, NOTIFICATIONS_FILE].forEach(file => {
     if (!fs.existsSync(file)) {
         fs.writeFileSync(file, JSON.stringify([]));
     }

@@ -14,10 +14,9 @@ app.use(express.static('public'));
 const KEYS_FILE = path.join(__dirname, 'keys.json');
 const BLACKLIST_FILE = path.join(__dirname, 'blacklist.json');
 const NOTIFICATIONS_FILE = path.join(__dirname, 'notifications.json');
-const proggress = path.join(__dirname, 'progress.json');
 
 // Verifică dacă fișierele există, dacă nu, creează-le
-[KEYS_FILE, BLACKLIST_FILE, progress, NOTIFICATIONS_FILE].forEach(file => {
+[KEYS_FILE, BLACKLIST_FILE, NOTIFICATIONS_FILE].forEach(file => {
     if (!fs.existsSync(file)) {
         fs.writeFileSync(file, JSON.stringify([]));
     }
@@ -346,26 +345,11 @@ app.get('/script-info', (req, res) => {
     `);
 });
 
-function saveProgress(ip, checkpoint) {
-    const progress = loadData('progress.json') || [];
-    const existing = progress.find(entry => entry.ip === ip);
-    if (existing) {
-        existing.checkpoint = checkpoint;
-    } else {
-        progress.push({ ip, checkpoint });
-    }
-    saveData('progress.json', progress);
-}
-
 // Redirecționare către Linkvertise
 app.get('/redirect-to-linkvertise', (req, res) => {
     const ip = getClientIp(req);
-
-    // Salvează progresul la primul checkpoint
-    saveProgress(ip, 1);
-
-    // Redirecționează către primul Linkvertise
-    res.redirect('https://link-center.net/1203734/the-basement-key1');
+    createKey(ip); // Creează cheia în avans
+    res.redirect('https://link-center.net/1203734/the-basement-key1'); // Primul Linkvertise
 });
 
 function antiBypass(req, res, next) {
@@ -426,19 +410,6 @@ function antiBypass(req, res, next) {
 
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const progress = loadData('progress.json') || [];
-    const userProgress = progress.find(entry => entry.ip === ip);
-
-    // Verifică progresul
-    if (userProgress && userProgress.checkpoint >= 2) {
-        res.redirect('/key-generated');
-        return;
-    }
-
-    // Salvează progresul pentru checkpoint2
-    saveProgress(ip, 2);
-
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -449,7 +420,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
                     background: linear-gradient(to top, #003366, white);
                     font-family: Arial, sans-serif;
                     display: flex;
-                    justify-content: center;
+                                        justify-content: center;
                     align-items: center;
                     height: 100vh;
                     margin: 0;
@@ -473,7 +444,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         <body>
             <div>
                 <h1>Basement Hub Key System | Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a>
+                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
             </div>
         </body>
         </html>
@@ -502,11 +473,8 @@ app.get('/key-generated', antiBypass, (req, res) => {
     let existingKey = keys.find(key => key.ip === ip && !key.expired);
 
     if (!existingKey) {
-        existingKey = createKey(ip); // Creează o cheie nouă dacă nu există
+        existingKey = createKey(ip); // Crează o cheie nouă dacă nu există
     }
-
-    // Salvează progresul pentru key-generated
-    saveProgress(ip, 3);
 
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -559,22 +527,28 @@ app.get('/key-generated', antiBypass, (req, res) => {
                 <a href="/reset-key">Reset Key</a>
             </div>
             <script>
-                var countDownDate = new Date().getTime() + ${timeLeft};
-                var x = setInterval(function() {
-                    var now = new Date().getTime();
-                    var distance = countDownDate - now;
-                    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
-                    if (distance < 0) {
-                        clearInterval(x);
-                        document.getElementById("timer").innerHTML = "EXPIRED";
-                        setTimeout(function() {
-                            location.reload();
-                        }, 1000);
-                    }
-                }, 1000);
+// Update the count down every 1 second
+var countDownDate = new Date().getTime() + ${timeLeft};
+
+// Actualizează countdown-ul la fiecare secundă
+var x = setInterval(function() {
+    var now = new Date().getTime();
+    var distance = countDownDate - now;
+
+    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
+
+    if (distance < 0) {
+        clearInterval(x);
+        document.getElementById("timer").innerHTML = "EXPIRED";
+        setTimeout(function() {
+            location.reload();
+        }, 1000); // Reîncarcă pagina după 1 secundă pentru a elimina cheia expirată
+    }
+}, 1000);
             </script>
         </body>
         </html>

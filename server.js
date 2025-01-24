@@ -175,7 +175,15 @@ app.get('/', (req, res) => {
             <head>
                 <title>Access Denied</title>
                 <style>
-                    body { display: flex; justify-content: center; align-items: center; height: 100vh; background: #333; color: #fff; font-family: Arial, sans-serif; }
+                    body {
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        background: #333;
+                        color: #fff;
+                        font-family: Arial, sans-serif;
+                    }
                     .message { text-align: center; }
                 </style>
             </head>
@@ -197,28 +205,26 @@ app.get('/', (req, res) => {
                 <title>Basement Hub Key System</title>
                 <style>
                     body {
-                        background: linear-gradient(to top, #1e3c72, #2a5298);
+                        background: linear-gradient(to top, #003366, white);
                         font-family: Arial, sans-serif;
                         display: flex;
                         justify-content: center;
                         align-items: center;
                         height: 100vh;
                         margin: 0;
-                        color: #fff;
                     }
                     .container {
                         text-align: center;
                     }
-                    h1 { font-size: 2.5rem; margin-bottom: 20px; }
+                    h1 { color: #fff; }
                     a {
-                        display: inline-block;
-                        margin: 10px;
-                        padding: 10px 20px;
-                        font-size: 16px;
                         background-color: #0056b3;
                         color: white;
+                        padding: 10px 20px;
                         text-decoration: none;
                         border-radius: 5px;
+                        font-size: 16px;
+                        margin: 10px;
                     }
                     a:hover { background-color: #003d80; }
                 </style>
@@ -227,7 +233,7 @@ app.get('/', (req, res) => {
                 <div class="container">
                     <h1>Welcome to Basement Hub Key System</h1>
                     <a href="/redirect-to-linkvertise">Generate a Key</a>
-                    <a href="/script-info">Script Info</a> <!-- Noul buton -->
+                    <a href="/script-info">Script Info</a>
                 </div>
             </body>
             </html>
@@ -243,7 +249,7 @@ app.get('/script-info', (req, res) => {
             <title>Script Info</title>
             <style>
                 body {
-                    background: linear-gradient(to right, #1e3c72, #2a5298);
+                    background: linear-gradient(to top, #003366, white);
                     font-family: Arial, sans-serif;
                     color: white;
                     margin: 0;
@@ -271,17 +277,28 @@ app.get('/script-info', (req, res) => {
                     border-radius: 5px;
                     font-size: 14px;
                     color: #4caf50;
+                    overflow-wrap: break-word;
                 }
-                .games-list {
-                    list-style-type: none;
-                    padding: 0;
-                    margin-top: 20px;
-                }
-                .games-list li {
+                .games-list button {
+                    display: block;
                     background: #444;
-                    margin: 5px 0;
-                    padding: 10px;
+                    color: white;
+                    border: none;
                     border-radius: 5px;
+                    padding: 10px;
+                    margin: 5px 0;
+                    cursor: pointer;
+                }
+                .games-list button:hover {
+                    background: #0056b3;
+                }
+                .go-back {
+                    margin-top: 20px;
+                    padding: 10px 20px;
+                    background: #b30000;
+                    border-radius: 5px;
+                    color: white;
+                    text-decoration: none;
                 }
                 .discord-icon {
                     position: fixed;
@@ -302,16 +319,17 @@ app.get('/script-info', (req, res) => {
                     <button onclick="copyScript()">Copy Script</button>
                 </div>
                 <h2>Supported Games</h2>
-                <ul class="games-list">
-                    <li>Life in Prison</li>
-                    <li>SL Prison</li>
-                    <li>War Tycoon</li>
-                    <li>Fisch</li>
-                    <li>Bloxfruit</li>
-                    <li>Arm Wrestling Simulator</li>
-                    <li>Bee Swarm Simulator</li>
-                    <li>Universal Script</li>
-                </ul>
+                <div class="games-list">
+                    <button onclick="window.location.href='https://roblox.com/life-in-prison'">Life in Prison</button>
+                    <button onclick="window.location.href='https://roblox.com/sl-prison'">SL Prison</button>
+                    <button onclick="window.location.href='https://roblox.com/war-tycoon'">War Tycoon</button>
+                    <button onclick="window.location.href='https://roblox.com/fisch'">Fisch</button>
+                    <button onclick="window.location.href='https://roblox.com/bloxfruit'">Bloxfruit</button>
+                    <button onclick="window.location.href='https://roblox.com/arm-wrestling'">Arm Wrestling Simulator</button>
+                    <button onclick="window.location.href='https://roblox.com/bee-swarm'">Bee Swarm Simulator</button>
+                    <button onclick="window.location.href='https://roblox.com/universal'">Universal Script</button>
+                </div>
+                <a href="/" class="go-back">Go Back</a>
             </div>
             <img src="https://discord.com/assets/847541504914fd33810e70a0ea73177e.ico" class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'" alt="Discord">
             <script>
@@ -327,11 +345,26 @@ app.get('/script-info', (req, res) => {
     `);
 });
 
+function saveProgress(ip, checkpoint) {
+    const progress = loadData('progress.json') || [];
+    const existing = progress.find(entry => entry.ip === ip);
+    if (existing) {
+        existing.checkpoint = checkpoint;
+    } else {
+        progress.push({ ip, checkpoint });
+    }
+    saveData('progress.json', progress);
+}
+
 // Redirecționare către Linkvertise
 app.get('/redirect-to-linkvertise', (req, res) => {
     const ip = getClientIp(req);
-    createKey(ip); // Creează cheia în avans
-    res.redirect('https://link-center.net/1203734/the-basement-key1'); // Primul Linkvertise
+
+    // Salvează progresul la primul checkpoint
+    saveProgress(ip, 1);
+
+    // Redirecționează către primul Linkvertise
+    res.redirect('https://link-center.net/1203734/the-basement-key1');
 });
 
 function antiBypass(req, res, next) {
@@ -392,6 +425,19 @@ function antiBypass(req, res, next) {
 
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
+    const ip = getClientIp(req);
+    const progress = loadData('progress.json') || [];
+    const userProgress = progress.find(entry => entry.ip === ip);
+
+    // Verifică progresul
+    if (userProgress && userProgress.checkpoint >= 2) {
+        res.redirect('/key-generated');
+        return;
+    }
+
+    // Salvează progresul pentru checkpoint2
+    saveProgress(ip, 2);
+
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -402,7 +448,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
                     background: linear-gradient(to top, #003366, white);
                     font-family: Arial, sans-serif;
                     display: flex;
-                                        justify-content: center;
+                    justify-content: center;
                     align-items: center;
                     height: 100vh;
                     margin: 0;
@@ -426,7 +472,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         <body>
             <div>
                 <h1>Basement Hub Key System | Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
+                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a>
             </div>
         </body>
         </html>
@@ -455,8 +501,11 @@ app.get('/key-generated', antiBypass, (req, res) => {
     let existingKey = keys.find(key => key.ip === ip && !key.expired);
 
     if (!existingKey) {
-        existingKey = createKey(ip); // Crează o cheie nouă dacă nu există
+        existingKey = createKey(ip); // Creează o cheie nouă dacă nu există
     }
+
+    // Salvează progresul pentru key-generated
+    saveProgress(ip, 3);
 
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -509,28 +558,22 @@ app.get('/key-generated', antiBypass, (req, res) => {
                 <a href="/reset-key">Reset Key</a>
             </div>
             <script>
-// Update the count down every 1 second
-var countDownDate = new Date().getTime() + ${timeLeft};
-
-// Actualizează countdown-ul la fiecare secundă
-var x = setInterval(function() {
-    var now = new Date().getTime();
-    var distance = countDownDate - now;
-
-    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
-
-    if (distance < 0) {
-        clearInterval(x);
-        document.getElementById("timer").innerHTML = "EXPIRED";
-        setTimeout(function() {
-            location.reload();
-        }, 1000); // Reîncarcă pagina după 1 secundă pentru a elimina cheia expirată
-    }
-}, 1000);
+                var countDownDate = new Date().getTime() + ${timeLeft};
+                var x = setInterval(function() {
+                    var now = new Date().getTime();
+                    var distance = countDownDate - now;
+                    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
+                    if (distance < 0) {
+                        clearInterval(x);
+                        document.getElementById("timer").innerHTML = "EXPIRED";
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    }
+                }, 1000);
             </script>
         </body>
         </html>

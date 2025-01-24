@@ -184,77 +184,125 @@ app.get('/', (req, res) => {
                     <h1>You have been blacklisted.</h1>
                     <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
                     <p>Duration: Indefinite</p>
-                    <p>Blacklist ID: ${blacklisted.blacklistId || 'N/A'}</p>
+                    <p>Blacklist ID: ${blacklisted.blacklistId}</p>
                 </div>
             </body>
             </html>
         `);
-        return;
+    } else {
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basement Hub Key System</title>
+                <style>
+                    body {
+                        background: linear-gradient(to top, #1e3c72, #2a5298);
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        color: #fff;
+                    }
+                    .container {
+                        text-align: center;
+                    }
+                    h1 { font-size: 2.5rem; margin-bottom: 20px; }
+                    a {
+                        display: inline-block;
+                        margin: 10px;
+                        padding: 10px 20px;
+                        font-size: 16px;
+                        background-color: #0056b3;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                    }
+                    a:hover { background-color: #003d80; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Welcome to Basement Hub Key System</h1>
+                    <a href="/redirect-to-linkvertise">Generate a Key</a>
+                    <a href="/script-info">Script Info</a> <!-- Noul buton -->
+                </div>
+            </body>
+            </html>
+        `);
     }
+});
 
-    // Pagina principală
+app.get('/script-info', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Basement Hub Key System</title>
+            <title>Script Info</title>
             <style>
                 body {
-                    background: linear-gradient(to top, #003366, white);
+                    background: linear-gradient(to right, #1e3c72, #2a5298);
                     font-family: Arial, sans-serif;
+                    color: white;
+                    margin: 0;
+                    padding: 0;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    padding: 20px;
-                    height: 100vh;
-                    margin: 0;
+                    justify-content: center;
+                    min-height: 100vh;
                 }
-                h1 { color: #fff; margin-bottom: 20px; }
-                .button {
-                    background-color: #0056b3;
-                    color: white;
-                    padding: 10px 20px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-size: 16px;
-                    margin: 10px 0;
-                    cursor: pointer;
+                .content {
                     text-align: center;
-                    display: inline-block;
+                    max-width: 600px;
                 }
-                .button:hover { background-color: #003d80; }
-                .info-box {
-                    background-color: #1d1d1d;
-                    color: white;
-                    padding: 20px;
+                .script-box {
+                    background: #333;
+                    padding: 15px;
                     border-radius: 10px;
-                    margin-top: 20px;
-                    text-align: center;
-                    width: 80%;
+                    margin-bottom: 20px;
                 }
-                .info-box p { margin: 10px 0; }
+                .script-box code {
+                    display: block;
+                    background: #222;
+                    padding: 10px;
+                    border-radius: 5px;
+                    font-size: 14px;
+                    color: #4caf50;
+                }
+                .games-list {
+                    list-style-type: none;
+                    padding: 0;
+                    margin-top: 20px;
+                }
+                .games-list li {
+                    background: #444;
+                    margin: 5px 0;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
                 .discord-icon {
                     position: fixed;
                     bottom: 20px;
-                    text-align: center;
+                    right: 20px;
+                    width: 60px;
+                    height: 60px;
                     cursor: pointer;
-                }
-                .discord-icon img {
-                    width: 50px;
-                    height: 50px;
-                    border-radius: 50%;
                 }
             </style>
         </head>
         <body>
-            <h1>Welcome to Basement Hub Key System</h1>
-            <a href="/redirect-to-linkvertise" class="button">Generate a Key</a>
-            <div class="info-box">
-                <p><strong>Script:</strong></p>
-                <p><code>loadstring(game:HttpGet("https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub", true))()</code></p>
-                <button class="button" onclick="navigator.clipboard.writeText('loadstring(game:HttpGet(\\'https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub\\', true))()')">Copy Script</button>
-                <p><strong>Supported Games:</strong></p>
-                <ul>
+            <div class="content">
+                <h1>Basement Hub Script Info</h1>
+                <div class="script-box">
+                    <p>Use this script in your game:</p>
+                    <code>loadstring(game:HttpGet("https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub", true))()</code>
+                    <button onclick="copyScript()">Copy Script</button>
+                </div>
+                <h2>Supported Games</h2>
+                <ul class="games-list">
                     <li>Life in Prison</li>
                     <li>SL Prison</li>
                     <li>War Tycoon</li>
@@ -265,9 +313,15 @@ app.get('/', (req, res) => {
                     <li>Universal Script</li>
                 </ul>
             </div>
-            <div class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'">
-                <img src="https://cdn.discordapp.com/icons/123456789123456789/abcdef123456789abcdef.png" alt="Discord">
-            </div>
+            <img src="https://discord.com/assets/847541504914fd33810e70a0ea73177e.ico" class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'" alt="Discord">
+            <script>
+                function copyScript() {
+                    const script = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub", true))()';
+                    navigator.clipboard.writeText(script).then(() => {
+                        alert("Script copied to clipboard!");
+                    });
+                }
+            </script>
         </body>
         </html>
     `);

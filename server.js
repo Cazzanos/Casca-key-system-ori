@@ -184,10 +184,11 @@ function generateBlacklistId() {
 
 // Route pentru pagina principală
 app.get('/', (req, res) => {
-    const ip = getClientIp(req);
-    const blacklist = loadData(BLACKLIST_FILE);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const blacklist = loadData(BLACKLIST_FILE); // Încarcă lista de blacklist
     const blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip && entry.expiry === 'permanent');
 
+    // Dacă utilizatorul este pe blacklist
     if (blacklisted) {
         res.send(`
             <!DOCTYPE html>
@@ -211,54 +212,51 @@ app.get('/', (req, res) => {
                 <div class="message">
                     <h1>You have been blacklisted.</h1>
                     <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
-                    <p>Duration: Indefinite</p>
                     <p>Blacklist ID: ${blacklisted.blacklistId}</p>
                 </div>
             </body>
             </html>
         `);
-    } else {
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Basement Hub Key System</title>
-                <style>
-                    body {
-                        background: linear-gradient(to top, #003366, white);
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                    }
-                    .container {
-                        text-align: center;
-                    }
-                    h1 { color: #fff; }
-                    a {
-                        background-color: #0056b3;
-                        color: white;
-                        padding: 10px 20px;
-                        text-decoration: none;
-                        border-radius: 5px;
-                        font-size: 16px;
-                        margin: 10px;
-                    }
-                    a:hover { background-color: #003d80; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>Welcome to Basement Hub Key System</h1>
-                    <a href="/redirect-to-linkvertise">Generate a Key</a>
-                    <a href="/script-info">Script Info</a>
-                </div>
-            </body>
-            </html>
-        `);
+        return;
     }
+
+    // Dacă utilizatorul nu este pe blacklist
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Basement Hub Key System</title>
+            <style>
+                body {
+                    background: linear-gradient(to top, #003366, white);
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                h1 { color: #fff; }
+                a {
+                    background-color: #0056b3;
+                    color: white;
+                    padding: 10px 20px;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    font-size: 16px;
+                }
+                a:hover { background-color: #003d80; }
+            </style>
+        </head>
+        <body>
+            <div>
+                <h1>Welcome to Basement Hub Key System</h1>
+                <a href="/redirect-to-linkvertise">Generate a Key</a>
+                <a href="/script-info">Script Info</a>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 app.get('/script-info', (req, res) => {
@@ -377,30 +375,27 @@ app.get('/redirect-to-linkvertise', (req, res) => {
 });
 
 function antiBypass(req, res, next) {
-    const referer = req.get('Referer');
     const ip = getClientIp(req);
-    const blacklist = loadData(BLACKLIST_FILE);
+    const referer = req.get('Referer');
+    const progress = loadData(PROGRESS_FILE);
+    const userProgress = progress.find(entry => entry.ip === ip);
 
-    // Verifică dacă utilizatorul a venit de la Linkvertise
+    if (userProgress) {
+        // Verifică dacă utilizatorul a progresat până la checkpoint-ul curent
+        if (req.path === '/checkpoint2' && userProgress.stage >= 1) {
+            return next(); // Permite accesul
+        }
+        if (req.path === '/key-generated' && userProgress.stage >= 2) {
+            return next(); // Permite accesul
+        }
+    }
+
     if (referer && referer.includes("linkvertise.com")) {
-        return next(); // Permite accesul
+        return next(); // Permite accesul dacă vine de pe Linkvertise
     }
 
-    // Adaugă utilizatorul pe blacklist dacă nu există deja
-    let blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip);
-    if (!blacklisted) {
-        blacklisted = {
-            type: 'ip',
-            value: ip,
-            reason: 'Tried to bypass the key system',
-            expiry: 'permanent',
-            blacklistId: `BL-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
-        };
-        blacklist.push(blacklisted);
-        saveData(BLACKLIST_FILE, blacklist);
-    }
-
-    // Mesaj anti-bypass
+    // Dacă nu îndeplinește condițiile, aplică blacklist-ul
+    blacklistIp(ip, 'Tried to bypass the key system');
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -417,8 +412,14 @@ function antiBypass(req, res, next) {
                     font-family: Arial, sans-serif;
                     text-align: center;
                 }
-                h1 { font-size: 3rem; margin: 0; }
-                p { font-size: 1.2rem; margin-top: 10px; }
+                h1 {
+                    font-size: 3rem;
+                    margin: 0;
+                }
+                p {
+                    font-size: 1.2rem;
+                    margin-top: 10px;
+                }
             </style>
         </head>
         <body>
@@ -434,18 +435,21 @@ function antiBypass(req, res, next) {
 
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const progress = loadData(PROGRESS_FILE);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const progress = loadData(PROGRESS_FILE); // Încarcă progresul din fișier
+
+    // Verifică progresul utilizatorului
     const userProgress = progress.find(entry => entry.ip === ip);
 
-    if (!userProgress || userProgress.stage < 1) {
-        // Utilizatorul nu a finalizat primul checkpoint
-        return res.redirect('/'); // Redirecționează înapoi la pagina principală
+    // Dacă utilizatorul nu a trecut de primul checkpoint, redirecționează înapoi la pagina principală
+    if (!userProgress || userProgress.lastCheckpoint < 1) {
+        return res.redirect('/');
     }
 
     // Salvează progresul la checkpoint 2
     saveProgress(ip, 2);
 
+    // Răspunsul HTML
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -463,6 +467,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
                 }
                 h1 {
                     color: white;
+                    font-size: 2.5rem;
                 }
                 a {
                     background-color: #0056b3;
@@ -470,7 +475,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
                     padding: 10px 20px;
                     text-decoration: none;
                     border-radius: 5px;
-                    font-size: 16px;
+                    font-size: 1.2rem;
                 }
                 a:hover {
                     background-color: #003d80;
@@ -480,7 +485,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         <body>
             <div>
                 <h1>Checkpoint 2</h1>
-                <a href="https://link-center.net/1203734/key2">Complete Checkpoint 2</a>
+                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
             </div>
         </body>
         </html>
@@ -504,20 +509,22 @@ app.get('/bypassbozo', (req, res) => {
 
 // După finalizarea Checkpoint 2, redirecționează către pagina key-generated
 app.get('/key-generated', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const keys = loadData(KEYS_FILE);
-    let existingKey = keys.find(key => key.ip === ip && !key.expired);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const keys = loadData(KEYS_FILE); // Încarcă cheile existente
+    let existingKey = keys.find(key => key.ip === ip && !key.expired); // Găsește cheia asociată IP-ului
 
-    // Dacă nu există o cheie pentru IP, creează una
+    // Dacă nu există o cheie asociată acestui IP, creează una nouă
     if (!existingKey) {
         existingKey = createKey(ip);
     }
 
+    // Calcularea timpului rămas
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
 
+    // Răspunsul HTML
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -1049,6 +1056,11 @@ app.post('/admin/create-key', (req, res) => {
     res.redirect('/admin?access_code=buratiocadminboscotos');
 });
 
+app.post('/admin/clear-blacklist', (req, res) => {
+    saveData(BLACKLIST_FILE, []);
+    res.redirect('/admin?access_code=buratiocadminboscotos');
+});
+
 app.post('/create-key', (req, res) => {
     const { name, duration, maxUsers } = req.body;
 
@@ -1059,7 +1071,7 @@ app.post('/create-key', (req, res) => {
     const keys = loadData(KEYS_FILE);
     const newKey = {
         key: name,
-        duration: parseInt(duration),
+        ip: 'admin',
         maxUsers: parseInt(maxUsers),
         createdAt: Date.now(),
         expiresAt: Date.now() + parseInt(duration),

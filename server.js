@@ -184,10 +184,11 @@ function generateBlacklistId() {
 
 // Route pentru pagina principală
 app.get('/', (req, res) => {
-    const ip = getClientIp(req);
-    const blacklist = loadData(BLACKLIST_FILE);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const blacklist = loadData(BLACKLIST_FILE); // Încarcă lista de blacklist
     const blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip && entry.expiry === 'permanent');
 
+    // Dacă utilizatorul este pe blacklist
     if (blacklisted) {
         res.send(`
             <!DOCTYPE html>
@@ -195,9 +196,14 @@ app.get('/', (req, res) => {
             <head>
                 <title>Access Denied</title>
                 <style>
-                    body { 
-                        display: flex; justify-content: center; align-items: center; 
-                        height: 100vh; background: #333; color: #fff; font-family: Arial, sans-serif; 
+                    body {
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        background: #333;
+                        color: #fff;
+                        font-family: Arial, sans-serif;
                     }
                     .message { text-align: center; }
                 </style>
@@ -206,59 +212,51 @@ app.get('/', (req, res) => {
                 <div class="message">
                     <h1>You have been blacklisted.</h1>
                     <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
-                    <p>Duration: Indefinite</p>
-                    <p>Blacklist ID: ${blacklisted.blacklistId || 'N/A'}</p>
+                    <p>Blacklist ID: ${blacklisted.blacklistId}</p>
                 </div>
             </body>
             </html>
         `);
-    } else {
-        const progress = loadData(PROGRESS_FILE);
-        const userProgress = progress.find(entry => entry.ip === ip);
-
-        // Redirecționează în funcție de progres
-        if (userProgress && userProgress.lastCheckpoint === 2) {
-            return res.redirect('/key-generated');
-        } else if (userProgress && userProgress.lastCheckpoint === 1) {
-            return res.redirect('/checkpoint2');
-        }
-
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Basement Hub Key System</title>
-                <style>
-                    body {
-                        background: linear-gradient(to top, #003366, white);
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                    }
-                    h1 { color: #fff; }
-                    a {
-                        background-color: #0056b3;
-                        color: white;
-                        padding: 10px 20px;
-                        text-decoration: none;
-                        border-radius: 5px;
-                        font-size: 16px;
-                    }
-                    a:hover { background-color: #003d80; }
-                </style>
-            </head>
-            <body>
-                <div>
-                    <h1>Welcome to Basement Hub Key System</h1>
-                    <a href="/redirect-to-linkvertise">Generate a Key</a>
-                </div>
-            </body>
-            </html>
-        `);
+        return;
     }
+
+    // Dacă utilizatorul nu este pe blacklist
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Basement Hub Key System</title>
+            <style>
+                body {
+                    background: linear-gradient(to top, #003366, white);
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                h1 { color: #fff; }
+                a {
+                    background-color: #0056b3;
+                    color: white;
+                    padding: 10px 20px;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    font-size: 16px;
+                }
+                a:hover { background-color: #003d80; }
+            </style>
+        </head>
+        <body>
+            <div>
+                <h1>Welcome to Basement Hub Key System</h1>
+                <a href="/redirect-to-linkvertise">Generate a Key</a>
+                <a href="/script-info">Script Info</a>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 app.get('/script-info', (req, res) => {
@@ -437,22 +435,26 @@ function antiBypass(req, res, next) {
 
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const progress = loadData(PROGRESS_FILE);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const progress = loadData(PROGRESS_FILE); // Încarcă progresul din fișier
 
+    // Verifică progresul utilizatorului
     const userProgress = progress.find(entry => entry.ip === ip);
+
+    // Dacă utilizatorul nu a trecut de primul checkpoint, redirecționează înapoi la pagina principală
     if (!userProgress || userProgress.lastCheckpoint < 1) {
-        return res.redirect('/'); // Redirecționează înapoi dacă progresul este incorect
+        return res.redirect('/');
     }
 
     // Salvează progresul la checkpoint 2
     saveProgress(ip, 2);
 
+    // Răspunsul HTML
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Checkpoint 2</title>
+            <title>Basement Hub Key System | Checkpoint 2</title>
             <style>
                 body {
                     background: linear-gradient(to top, #003366, white);
@@ -463,22 +465,27 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
                     height: 100vh;
                     margin: 0;
                 }
-                h1 { color: white; }
+                h1 {
+                    color: white;
+                    font-size: 2.5rem;
+                }
                 a {
                     background-color: #0056b3;
                     color: white;
                     padding: 10px 20px;
                     text-decoration: none;
                     border-radius: 5px;
-                    font-size: 16px;
+                    font-size: 1.2rem;
                 }
-                a:hover { background-color: #003d80; }
+                a:hover {
+                    background-color: #003d80;
+                }
             </style>
         </head>
         <body>
             <div>
-                <h1>Basement Hub Key System | Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a>
+                <h1>Checkpoint 2</h1>
+                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
             </div>
         </body>
         </html>
@@ -502,24 +509,22 @@ app.get('/bypassbozo', (req, res) => {
 
 // După finalizarea Checkpoint 2, redirecționează către pagina key-generated
 app.get('/key-generated', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const keys = loadData(KEYS_FILE);
+    const ip = getClientIp(req); // Obține IP-ul utilizatorului
+    const keys = loadData(KEYS_FILE); // Încarcă cheile existente
+    let existingKey = keys.find(key => key.ip === ip && !key.expired); // Găsește cheia asociată IP-ului
 
-    let existingKey = keys.find(key => key.ip === ip && !key.expired);
-
-    // Dacă nu există o cheie valabilă pentru IP-ul curent
+    // Dacă nu există o cheie asociată acestui IP, creează una nouă
     if (!existingKey) {
-        return res.redirect('/'); // Redirecționează la pagina principală
+        existingKey = createKey(ip);
     }
 
+    // Calcularea timpului rămas
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
 
-    // Salvare progres
-    saveProgress(ip, 3);
-
+    // Răspunsul HTML
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -601,8 +606,8 @@ app.get('/key-generated', antiBypass, (req, res) => {
                         clearInterval(x);
                         document.getElementById("timer").innerHTML = "EXPIRED";
                         setTimeout(function() {
-                            location.href = '/'; // Redirecționează la pagina principală dacă cheia a expirat
-                        }, 1000);
+                            location.reload();
+                        }, 1000); // Reîncarcă pagina după 1 secundă
                     }
                 }, 1000);
             </script>

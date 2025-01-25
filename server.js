@@ -435,13 +435,15 @@ function antiBypass(req, res, next) {
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
     const ip = getClientIp(req);
-    const userProgress = getProgress(ip);
+    const progress = loadData(PROGRESS_FILE);
+    const userProgress = progress.find(entry => entry.ip === ip);
 
-    if (userProgress < 1) {
-        return res.redirect('/'); // Redirecționează utilizatorul înapoi la prima pagină.
+    if (!userProgress || userProgress.stage < 1) {
+        // Utilizatorul nu a finalizat primul checkpoint
+        return res.redirect('/'); // Redirecționează înapoi la pagina principală
     }
 
-    // Salvează progresul pentru checkpoint 2.
+    // Salvează progresul la checkpoint 2
     saveProgress(ip, 2);
 
     res.send(`
@@ -477,8 +479,8 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         </head>
         <body>
             <div>
-                <h1>Basement Hub Key System | Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a>
+                <h1>Checkpoint 2</h1>
+                <a href="https://link-center.net/1203734/key2">Complete Checkpoint 2</a>
             </div>
         </body>
         </html>
@@ -1051,25 +1053,24 @@ app.post('/create-key', (req, res) => {
     const { name, duration, maxUsers } = req.body;
 
     if (!name || !duration || !maxUsers) {
-        return res.status(400).send('Missing required fields: name, duration, or maxUsers.');
+        return res.status(400).json({ error: 'Missing required parameters: name, duration, or maxUsers.' });
     }
 
-    const key = generateKey(); // Creează o cheie unică
-    const expiresAt = Date.now() + duration * 1000;
+    const keys = loadData(KEYS_FILE);
     const newKey = {
-        key,
-        name,
-        maxUsers,
-        expiresAt,
-        expired: false,
-        usage: 0
+        key: name,
+        duration: parseInt(duration),
+        maxUsers: parseInt(maxUsers),
+        createdAt: Date.now(),
+        expiresAt: Date.now() + parseInt(duration),
+        usedBy: [],
+        expired: false
     };
 
-    const keys = loadData(KEYS_FILE);
     keys.push(newKey);
     saveData(KEYS_FILE, keys);
 
-    res.status(200).json(newKey);
+    res.status(200).json({ message: 'Key created successfully!', key: newKey });
 });
 
 app.delete('/unblacklist/:blacklistId', (req, res) => {

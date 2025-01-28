@@ -142,16 +142,21 @@ function checkAccess(req, res, next) {
     res.status(401).send('Unauthorized');
 }
 
-function blacklistIp(ip, reason = 'No reason provided') {
+function blacklistIp(ip, reason) {
     const blacklist = loadData(BLACKLIST_FILE);
-    const now = Date.now();
-    
+    const existingEntry = blacklist.find(entry => entry.type === 'ip' && entry.value === ip);
+
+    if (existingEntry) return; // Dacă există deja, nu adaugă din nou
+
+    const blacklistId = uuidv4(); // Creează un ID unic pentru blacklist
     blacklist.push({
         type: 'ip',
         value: ip,
-        reason: reason,
-        expiry: 'permanent'  // Set as permanent for bypass attempts
+        reason: reason || 'No reason provided',
+        expiry: 'permanent',
+        blacklistId: blacklistId // Adaugă blacklistId
     });
+
     saveData(BLACKLIST_FILE, blacklist);
 }
 
@@ -188,8 +193,8 @@ app.get('/', (req, res) => {
     const blacklist = loadData(BLACKLIST_FILE); // Încarcă lista de blacklist
     const blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip && entry.expiry === 'permanent');
 
-    // Dacă utilizatorul este pe blacklist
     if (blacklisted) {
+        // Dacă utilizatorul este pe blacklist
         res.send(`
             <!DOCTYPE html>
             <html>
@@ -212,20 +217,60 @@ app.get('/', (req, res) => {
                 <div class="message">
                     <h1>You have been blacklisted.</h1>
                     <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
-                    <p>Blacklist ID: ${blacklisted.blacklistId}</p>
+                    <p>Blacklist ID: ${blacklisted.blacklistId || 'N/A'}</p>
                 </div>
             </body>
             </html>
         `);
-        return;
+    } else {
+        // Dacă utilizatorul nu este pe blacklist
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basement Hub Key System</title>
+                <style>
+                    body {
+                        background: linear-gradient(to top, #003366, white);
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+                    h1 { color: #fff; }
+                    a {
+                        background-color: #0056b3;
+                        color: white;
+                        padding: 10px 20px;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        margin: 10px;
+                    }
+                    a:hover { background-color: #003d80; }
+                </style>
+            </head>
+            <body>
+                <div>
+                    <h1>Welcome to Basement Hub Key System</h1>
+                    <a href="/redirect-to-linkvertise">Generate a Key</a>
+                    <a href="/key-info">Key Info</a>
+                    <a href="/script-info">Script Info</a> <!-- Butonul "Script Info" -->
+                </div>
+            </body>
+            </html>
+        `);
     }
+});
 
-    // Dacă utilizatorul nu este pe blacklist
+app.get('/key-info', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Basement Hub Key System</title>
+            <title>Key Info</title>
             <style>
                 body {
                     background: linear-gradient(to top, #003366, white);
@@ -236,27 +281,216 @@ app.get('/', (req, res) => {
                     height: 100vh;
                     margin: 0;
                 }
-                h1 { color: #fff; }
-                a {
+                .container {
+                    text-align: center;
+                    max-width: 600px;
+                }
+                input[type="text"] {
+                    width: 80%;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border: 1px solid #ccc;
+                    border-radius: 5px;
+                }
+                button {
                     background-color: #0056b3;
                     color: white;
                     padding: 10px 20px;
-                    text-decoration: none;
+                    border: none;
                     border-radius: 5px;
                     font-size: 16px;
+                    margin: 5px;
+                    cursor: pointer;
                 }
-                a:hover { background-color: #003d80; }
+                button:hover {
+                    background-color: #003d80;
+                }
+                .error {
+                    color: red;
+                    font-size: 14px;
+                    margin-top: 10px;
+                }
             </style>
         </head>
         <body>
-            <div>
-                <h1>Welcome to Basement Hub Key System</h1>
-                <a href="/redirect-to-linkvertise">Generate a Key</a>
-                <a href="/script-info">Script Info</a>
+            <div class="container">
+                <h1>Key Info</h1>
+                <input type="text" id="keyInput" placeholder="Enter your key here">
+                <button onclick="searchKey()">Search</button>
+                <button onclick="findMyKey()">Find My Key IP</button>
+                <p id="error" class="error"></p>
             </div>
+            <script>
+                function searchKey() {
+                    const key = document.getElementById("keyInput").value;
+                    fetch('/search-key', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.href = '/key-details?key=' + key;
+                        } else {
+                            document.getElementById("error").innerText = data.message;
+                        }
+                    });
+                }
+
+                function findMyKey() {
+                    fetch('/find-my-key', { method: 'GET' })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success) {
+                                window.location.href = '/key-details?key=' + data.key;
+                            } else {
+                                document.getElementById("error").innerText = data.message;
+                            }
+                        });
+                }
+            </script>
         </body>
         </html>
     `);
+});
+
+app.post('/search-key', (req, res) => {
+    const { key } = req.body;
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.key === key && !k.expired);
+    if (!foundKey) {
+        return res.json({ success: false, message: 'Your key expired or does not exist.' });
+    }
+
+    if (foundKey.ip === 'admin') {
+        return res.json({ success: true, isAdmin: true, key: foundKey.key });
+    }
+
+    const ip = getClientIp(req);
+    if (foundKey.ip === ip) {
+        return res.json({ success: true, isAdmin: false, key: foundKey.key });
+    }
+
+    res.json({ success: false, message: 'This key does not belong to your IP.' });
+});
+
+app.get('/find-my-key', (req, res) => {
+    const ip = getClientIp(req);
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.ip === ip && !k.expired);
+    if (foundKey) {
+        return res.json({ success: true, key: foundKey.key });
+    }
+    res.json({ success: false, message: 'No valid key found for your IP.' });
+});
+
+app.get('/key-details', (req, res) => {
+    const { key } = req.query;
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.key === key);
+    if (!foundKey) {
+        return res.redirect('/key-info');
+    }
+
+    const isAdmin = foundKey.ip === 'admin'; // Verifică dacă cheia este de tip admin
+    const timeLeft = foundKey.expiresAt - Date.now();
+    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Key Details</title>
+            <style>
+                body {
+                    background: linear-gradient(to bottom, #003366, white);
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .container {
+                    text-align: center;
+                    max-width: 600px;
+                }
+                .key-info {
+                    margin-bottom: 20px;
+                }
+                button {
+                    background-color: ${isAdmin ? '#ccc' : '#d9534f'};
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 5px;
+                    font-size: 16px;
+                    cursor: ${isAdmin ? 'not-allowed' : 'pointer'};
+                }
+                button:hover {
+                    background-color: ${isAdmin ? '#ccc' : '#c9302c'};
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Key Details</h1>
+                <div class="key-info">
+                    <p><strong>Key:</strong> ${foundKey.key}</p>
+                    <p><strong>Time Left:</strong> ${isAdmin ? 'Never Expires' : `${hours}h ${minutes}m ${seconds}s`}</p>
+                    <p><strong>Users:</strong> ${foundKey.users.join(', ') || 'No users'}</p>
+                </div>
+                ${
+                    isAdmin
+                        ? `<p>This is an admin key. No actions available.</p>`
+                        : `<button onclick="unbindKey()">Unbind All Users</button>`
+                }
+            </div>
+            ${
+                !isAdmin
+                    ? `<script>
+                        function unbindKey() {
+                            fetch('/unbind-key', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ key: '${foundKey.key}' })
+                            })
+                            .then(res => res.json())
+                            .then(data => {
+                                alert(data.message);
+                                if (data.success) {
+                                    location.reload();
+                                }
+                            });
+                        }
+                    </script>`
+                    : ''
+            }
+        </body>
+        </html>
+    `);
+});
+
+app.post('/unbind-key', (req, res) => {
+    const { key } = req.body;
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.key === key);
+    if (!foundKey) {
+        return res.json({ success: false, message: 'Key not found.' });
+    }
+
+    foundKey.users = []; // Curăță utilizatorii
+    foundKey.inUse = false; // Resetează starea de utilizare
+    saveData(KEYS_FILE, keys);
+
+    res.json({ success: true, message: 'All users unbound from this key.' });
 });
 
 app.get('/script-info', (req, res) => {
@@ -338,18 +572,18 @@ app.get('/script-info', (req, res) => {
                 </div>
                 <h2>Supported Games</h2>
                 <div class="games-list">
-                    <button onclick="window.location.href='https://roblox.com/life-in-prison'">Life in Prison</button>
-                    <button onclick="window.location.href='https://roblox.com/sl-prison'">SL Prison</button>
-                    <button onclick="window.location.href='https://roblox.com/war-tycoon'">War Tycoon</button>
-                    <button onclick="window.location.href='https://roblox.com/fisch'">Fisch</button>
-                    <button onclick="window.location.href='https://roblox.com/bloxfruit'">Bloxfruit</button>
-                    <button onclick="window.location.href='https://roblox.com/arm-wrestling'">Arm Wrestling Simulator</button>
-                    <button onclick="window.location.href='https://roblox.com/bee-swarm'">Bee Swarm Simulator</button>
-                    <button onclick="window.location.href='https://roblox.com/universal'">Universal Script</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/8689257920/Life-in-Prison'">Life in Prison</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/16792181861/SL-PRISON'">SL Prison</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/4639625707/Nighthawk-War-Tycoon'">War Tycoon</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/16732694052/Fisch-ATLANTIS'">Fisch</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/2753915549/Blox-Fruits'">Bloxfruit</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/13127800756/Arm-Wrestle-Simulator?gameSearchSessionInfo=4588946f-1ef3-4135-a824-851a89d15af8&isAd=false&nativeAdData=&numberOfLoadedTiles=40&page=searchPage&placeId=13127800756&position=0&universeId=4582358979'">Arm Wrestling Simulator</button>
+                    <button onclick="window.location.href='https://www.roblox.com/games/1537690962/Bee-Swarm-Simulator'">Bee Swarm Simulator</button>
+                    <button onclick="window.location.href='https://www.roblox.com/home'">Universal Script</button>
                 </div>
                 <a href="/" class="go-back">Go Back</a>
             </div>
-            <img src="https://discord.com/assets/847541504914fd33810e70a0ea73177e.ico" class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'" alt="Discord">
+            <img src="https://cdn.discordapp.com/embed/avatars/0.png" class="discord-icon" onclick="window.location.href='https://discord.gg/VvBh5raCSW'" alt="Discord">
             <script>
                 function copyScript() {
                     const script = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Cazzanos/The-basement/main/Basement%20hub", true))()';
@@ -438,23 +672,21 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
     const ip = getClientIp(req); // Obține IP-ul utilizatorului
     const progress = loadData(PROGRESS_FILE); // Încarcă progresul din fișier
 
-    // Verifică progresul utilizatorului
     const userProgress = progress.find(entry => entry.ip === ip);
 
-    // Dacă utilizatorul nu a trecut de primul checkpoint, redirecționează înapoi la pagina principală
     if (!userProgress || userProgress.lastCheckpoint < 1) {
+        // Dacă progresul utilizatorului este incorect, redirecționează la pagina principală
         return res.redirect('/');
     }
 
-    // Salvează progresul la checkpoint 2
+    // Salvează progresul utilizatorului pentru checkpoint 2
     saveProgress(ip, 2);
 
-    // Răspunsul HTML
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Basement Hub Key System | Checkpoint 2</title>
+            <title>Checkpoint 2</title>
             <style>
                 body {
                     background: linear-gradient(to top, #003366, white);
@@ -484,7 +716,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         </head>
         <body>
             <div>
-                <h1>Checkpoint 2</h1>
+                <h1>Basement Hub Key System | Checkpoint 2</h1>
                 <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
             </div>
         </body>
@@ -510,21 +742,30 @@ app.get('/bypassbozo', (req, res) => {
 // După finalizarea Checkpoint 2, redirecționează către pagina key-generated
 app.get('/key-generated', antiBypass, (req, res) => {
     const ip = getClientIp(req); // Obține IP-ul utilizatorului
-    const keys = loadData(KEYS_FILE); // Încarcă cheile existente
-    let existingKey = keys.find(key => key.ip === ip && !key.expired); // Găsește cheia asociată IP-ului
+    const keys = loadData(KEYS_FILE); // Încarcă cheile
+    const progress = loadData(PROGRESS_FILE); // Încarcă progresul
 
-    // Dacă nu există o cheie asociată acestui IP, creează una nouă
+    const userProgress = progress.find(entry => entry.ip === ip);
+
+    if (!userProgress || userProgress.lastCheckpoint < 2) {
+        // Dacă progresul utilizatorului nu este corect, redirecționează la pagina principală
+        return res.redirect('/');
+    }
+
+    let existingKey = keys.find(key => key.ip === ip && !key.expired); // Găsește cheia utilizatorului
+
     if (!existingKey) {
+        // Dacă nu există o cheie, creează una nouă
         existingKey = createKey(ip);
     }
 
-    // Calcularea timpului rămas
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
 
-    // Răspunsul HTML
+    saveProgress(ip, 3); // Salvează progresul pentru key-generated
+
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -564,57 +805,20 @@ app.get('/key-generated', antiBypass, (req, res) => {
                     color: #ff0000;
                     margin-top: 15px;
                 }
-                .container {
-                    text-align: center;
-                }
-                .reset-btn {
-                    margin-top: 20px;
-                    background-color: #d9534f;
-                    color: white;
-                    padding: 10px 20px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-size: 1.2rem;
-                }
-                .reset-btn:hover {
-                    background-color: #c9302c;
-                }
             </style>
         </head>
         <body>
-            <div class="container">
+            <div>
                 <h1>Your Generated Key</h1>
                 <p>Your new key: <strong>${existingKey.key}</strong></p>
-                <p>It will expire in: <strong><span id="timer">${hours}h ${minutes}m ${seconds}s</span></strong></p>
-                <a href="/reset-key" class="reset-btn">Reset Key</a>
+                <p>It will expire in: <strong>${hours}h ${minutes}m ${seconds}s</strong></p>
+                <a href="/">Home</a>
             </div>
-            <script>
-                // Actualizează countdown-ul la fiecare secundă
-                var countDownDate = new Date().getTime() + ${timeLeft};
-
-                var x = setInterval(function() {
-                    var now = new Date().getTime();
-                    var distance = countDownDate - now;
-
-                    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-                    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
-
-                    if (distance < 0) {
-                        clearInterval(x);
-                        document.getElementById("timer").innerHTML = "EXPIRED";
-                        setTimeout(function() {
-                            location.reload();
-                        }, 1000); // Reîncarcă pagina după 1 secundă
-                    }
-                }, 1000);
-            </script>
         </body>
         </html>
     `);
 });
+
 
 // Route pentru resetarea unei chei
 app.get('/reset-key', (req, res) => {
@@ -1065,24 +1269,25 @@ app.post('/create-key', (req, res) => {
     const { name, duration, maxUsers } = req.body;
 
     if (!name || !duration || !maxUsers) {
-        return res.status(400).json({ error: 'Missing required parameters: name, duration, or maxUsers.' });
+        return res.status(400).json({ error: "Missing required fields: name, duration, or maxUsers." });
     }
 
-    const keys = loadData(KEYS_FILE);
     const newKey = {
         key: name,
-        ip: 'admin',
+        ip: "admin",
         maxUsers: parseInt(maxUsers),
         createdAt: Date.now(),
         expiresAt: Date.now() + parseInt(duration),
-        usedBy: [],
-        expired: false
+        expired: false,
+        inUse: false,
+        usedBy: []
     };
 
+    const keys = loadData(KEYS_FILE);
     keys.push(newKey);
     saveData(KEYS_FILE, keys);
 
-    res.status(200).json({ message: 'Key created successfully!', key: newKey });
+    res.json({ success: true, key: newKey });
 });
 
 app.delete('/unblacklist/:blacklistId', (req, res) => {

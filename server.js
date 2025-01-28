@@ -355,25 +355,42 @@ app.get('/key-info', (req, res) => {
     `);
 });
 
-app.post('/search-key', (req, res) => {
-    const { key } = req.body;
+app.get('/search-key', (req, res) => {
+    const { key } = req.query;
     const keys = loadData(KEYS_FILE);
 
-    const foundKey = keys.find(k => k.key === key && !k.expired);
-    if (!foundKey) {
-        return res.json({ success: false, message: 'Your key expired or does not exist.' });
+    const foundKey = keys.find(entry => entry.key === key);
+
+    if (!foundKey || foundKey.expired) {
+        return res.status(404).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Key Not Found</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: #333;
+                        color: white;
+                    }
+                </style>
+            </head>
+            <body>
+                <div>
+                    <h1>Key Not Found</h1>
+                    <p>The provided key does not exist or has expired.</p>
+                </div>
+            </body>
+            </html>
+        `);
     }
 
-    if (foundKey.ip === 'admin') {
-        return res.json({ success: true, isAdmin: true, key: foundKey.key });
-    }
-
-    const ip = getClientIp(req);
-    if (foundKey.ip === ip) {
-        return res.json({ success: true, isAdmin: false, key: foundKey.key });
-    }
-
-    res.json({ success: false, message: 'This key does not belong to your IP.' });
+    res.redirect(`/key-details?key=${key}`);
 });
 
 app.get('/find-my-key', (req, res) => {
@@ -388,15 +405,39 @@ app.get('/find-my-key', (req, res) => {
 });
 
 app.get('/key-details', (req, res) => {
-    const { key } = req.query;
-    const keys = loadData(KEYS_FILE);
+    const { key } = req.query; // Preluăm cheia din parametrii URL-ului
+    const keys = loadData(KEYS_FILE); // Încarcăm cheile din fișier
+    const foundKey = keys.find(entry => entry.key === key); // Căutăm cheia
 
-    const foundKey = keys.find(k => k.key === key);
     if (!foundKey) {
-        return res.redirect('/key-info');
+        return res.status(404).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Key Not Found</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: #333;
+                        color: white;
+                    }
+                </style>
+            </head>
+            <body>
+                <div>
+                    <h1>Key Not Found</h1>
+                    <p>The provided key does not exist or has expired.</p>
+                </div>
+            </body>
+            </html>
+        `);
     }
 
-    const isAdmin = foundKey.ip === 'admin'; // Verifică dacă cheia este de tip admin
     const timeLeft = foundKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
@@ -412,29 +453,32 @@ app.get('/key-details', (req, res) => {
                     background: linear-gradient(to bottom, #003366, white);
                     font-family: Arial, sans-serif;
                     display: flex;
-                    justify-content: center;
+                    flex-direction: column;
                     align-items: center;
+                    justify-content: center;
                     height: 100vh;
                     margin: 0;
                 }
                 .container {
                     text-align: center;
-                    max-width: 600px;
                 }
                 .key-info {
+                    background: #444;
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
                     margin-bottom: 20px;
                 }
                 button {
-                    background-color: ${isAdmin ? '#ccc' : '#d9534f'};
-                    color: white;
                     padding: 10px 20px;
                     border: none;
                     border-radius: 5px;
-                    font-size: 16px;
-                    cursor: ${isAdmin ? 'not-allowed' : 'pointer'};
+                    background: #0056b3;
+                    color: white;
+                    cursor: pointer;
                 }
                 button:hover {
-                    background-color: ${isAdmin ? '#ccc' : '#c9302c'};
+                    background: #003d80;
                 }
             </style>
         </head>
@@ -443,35 +487,12 @@ app.get('/key-details', (req, res) => {
                 <h1>Key Details</h1>
                 <div class="key-info">
                     <p><strong>Key:</strong> ${foundKey.key}</p>
-                    <p><strong>Time Left:</strong> ${isAdmin ? 'Never Expires' : `${hours}h ${minutes}m ${seconds}s`}</p>
-                    <p><strong>Users:</strong> ${foundKey.users.join(', ') || 'No users'}</p>
+                    <p><strong>Max Users:</strong> ${foundKey.maxUsers}</p>
+                    <p><strong>In Use:</strong> ${foundKey.inUse ? 'Yes' : 'No'}</p>
+                    <p><strong>Time Left:</strong> ${hours}h ${minutes}m ${seconds}s</p>
                 </div>
-                ${
-                    isAdmin
-                        ? `<p>This is an admin key. No actions available.</p>`
-                        : `<button onclick="unbindKey()">Unbind All Users</button>`
-                }
+                <button onclick="window.location.href='/unbind-key?key=${foundKey.key}'">Unbind Key</button>
             </div>
-            ${
-                !isAdmin
-                    ? `<script>
-                        function unbindKey() {
-                            fetch('/unbind-key', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ key: '${foundKey.key}' })
-                            })
-                            .then(res => res.json())
-                            .then(data => {
-                                alert(data.message);
-                                if (data.success) {
-                                    location.reload();
-                                }
-                            });
-                        }
-                    </script>`
-                    : ''
-            }
         </body>
         </html>
     `);
@@ -615,52 +636,41 @@ function antiBypass(req, res, next) {
     const userProgress = progress.find(entry => entry.ip === ip);
 
     if (userProgress) {
-        // Verifică dacă utilizatorul a progresat până la checkpoint-ul curent
-        if (req.path === '/checkpoint2' && userProgress.stage >= 1) {
-            return next(); // Permite accesul
+        if (req.path === '/checkpoint2' && userProgress.lastCheckpoint >= 1) {
+            return next();
         }
-        if (req.path === '/key-generated' && userProgress.stage >= 2) {
-            return next(); // Permite accesul
+        if (req.path === '/key-generated' && userProgress.lastCheckpoint >= 2) {
+            return next();
         }
     }
 
     if (referer && referer.includes("linkvertise.com")) {
-        return next(); // Permite accesul dacă vine de pe Linkvertise
+        return next();
     }
 
-    // Dacă nu îndeplinește condițiile, aplică blacklist-ul
     blacklistIp(ip, 'Tried to bypass the key system');
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Nice Try Bozo</title>
+            <title>Access Denied</title>
             <style>
                 body {
+                    font-family: Arial, sans-serif;
                     display: flex;
                     justify-content: center;
                     align-items: center;
                     height: 100vh;
-                    background: #333;
-                    color: #fff;
-                    font-family: Arial, sans-serif;
-                    text-align: center;
-                }
-                h1 {
-                    font-size: 3rem;
                     margin: 0;
-                }
-                p {
-                    font-size: 1.2rem;
-                    margin-top: 10px;
+                    background: #333;
+                    color: white;
                 }
             </style>
         </head>
         <body>
             <div>
-                <h1>Nice try, bozo!</h1>
-                <p>Your IP has been blacklisted for attempting to bypass the key system.</p>
-                <p>Contact a moderator from Basement Hub.</p>
+                <h1>Access Denied</h1>
+                <p>You have been blacklisted for attempting to bypass the system.</p>
             </div>
         </body>
         </html>

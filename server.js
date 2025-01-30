@@ -758,7 +758,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
     // Save progress at checkpoint 2
     saveProgress(ip, 2);
 
-    res.send(
+    res.send(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -804,7 +804,7 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
             </script>
         </body>
         </html>
-    );
+    `);
 });
 
 app.get('/bypassbozo', (req, res) => {

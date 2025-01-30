@@ -310,6 +310,11 @@ app.get('/key-info', (req, res) => {
                     font-size: 14px;
                     margin-top: 10px;
                 }
+                .success {
+                    color: green;
+                    font-size: 14px;
+                    margin-top: 10px;
+                }
             </style>
         </head>
         <body>
@@ -318,11 +323,15 @@ app.get('/key-info', (req, res) => {
                 <input type="text" id="keyInput" placeholder="Enter your key here">
                 <button onclick="searchKey()">Search</button>
                 <button onclick="findMyKey()">Find My Key IP</button>
-                <p id="error" class="error"></p>
+                <p id="message" class="error"></p>
             </div>
             <script>
                 function searchKey() {
                     const key = document.getElementById("keyInput").value;
+                    if (!key) {
+                        document.getElementById("message").innerText = "Please enter a key!";
+                        return;
+                    }
                     fetch('/search-key', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -333,8 +342,11 @@ app.get('/key-info', (req, res) => {
                         if (data.success) {
                             window.location.href = '/key-details?key=' + key;
                         } else {
-                            document.getElementById("error").innerText = data.message;
+                            document.getElementById("message").innerText = data.message;
                         }
+                    })
+                    .catch(err => {
+                        document.getElementById("message").innerText = "An error occurred while searching.";
                     });
                 }
 
@@ -345,8 +357,11 @@ app.get('/key-info', (req, res) => {
                             if (data.success) {
                                 window.location.href = '/key-details?key=' + data.key;
                             } else {
-                                document.getElementById("error").innerText = data.message;
+                                document.getElementById("message").innerText = data.message;
                             }
+                        })
+                        .catch(err => {
+                            document.getElementById("message").innerText = "An error occurred while finding your key.";
                         });
                 }
             </script>
@@ -355,42 +370,22 @@ app.get('/key-info', (req, res) => {
     `);
 });
 
-app.get('/search-key', (req, res) => {
-    const { key } = req.query;
+app.post('/search-key', (req, res) => {
+    const { key } = req.body;
     const keys = loadData(KEYS_FILE);
 
     const foundKey = keys.find(entry => entry.key === key);
 
-    if (!foundKey || foundKey.expired) {
-        return res.status(404).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Key Not Found</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: #333;
-                        color: white;
-                    }
-                </style>
-            </head>
-            <body>
-                <div>
-                    <h1>Key Not Found</h1>
-                    <p>The provided key does not exist or has expired.</p>
-                </div>
-            </body>
-            </html>
-        `);
+    if (!foundKey) {
+        return res.json({ success: false, message: "Key not found or does not exist." });
     }
 
-    res.redirect(`/key-details?key=${key}`);
+    if (foundKey.expired) {
+        return res.json({ success: false, message: "The key has expired." });
+    }
+
+    // If key is valid, redirect to key-details
+    res.json({ success: true });
 });
 
 app.get('/find-my-key', (req, res) => {
@@ -405,12 +400,13 @@ app.get('/find-my-key', (req, res) => {
 });
 
 app.get('/key-details', (req, res) => {
-    const { key } = req.query; // Preluăm cheia din parametrii URL-ului
-    const keys = loadData(KEYS_FILE); // Încarcăm cheile din fișier
-    const foundKey = keys.find(entry => entry.key === key); // Căutăm cheia
+    const { key } = req.query; // Get the key from the query string
+    const keys = loadData(KEYS_FILE); // Load all keys from the KEYS_FILE
+
+    const foundKey = keys.find(entry => entry.key === key);
 
     if (!foundKey) {
-        return res.status(404).send(`
+        return res.status(404).send(
             <!DOCTYPE html>
             <html>
             <head>
@@ -435,7 +431,7 @@ app.get('/key-details', (req, res) => {
                 </div>
             </body>
             </html>
-        `);
+        );
     }
 
     const timeLeft = foundKey.expiresAt - Date.now();
@@ -445,7 +441,7 @@ app.get('/key-details', (req, res) => {
 
     res.send(`
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
             <title>Key Details</title>
             <style>
@@ -453,46 +449,80 @@ app.get('/key-details', (req, res) => {
                     background: linear-gradient(to bottom, #003366, white);
                     font-family: Arial, sans-serif;
                     display: flex;
-                    flex-direction: column;
-                    align-items: center;
                     justify-content: center;
+                    align-items: center;
                     height: 100vh;
                     margin: 0;
                 }
                 .container {
                     text-align: center;
-                }
-                .key-info {
-                    background: #444;
                     color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    margin-bottom: 20px;
+                }
+                .timer {
+                    font-size: 1.5rem;
+                    color: red;
                 }
                 button {
-                    padding: 10px 20px;
-                    border: none;
-                    border-radius: 5px;
-                    background: #0056b3;
+                    margin-top: 15px;
+                    background-color: #0056b3;
                     color: white;
+                    padding: 10px 20px;
+                    border-radius: 5px;
                     cursor: pointer;
+                    border: none;
                 }
                 button:hover {
-                    background: #003d80;
+                    background-color: #003d80;
                 }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>Key Details</h1>
-                <div class="key-info">
-                    <p><strong>Key:</strong> ${foundKey.key}</p>
-                    <p><strong>Max Users:</strong> ${foundKey.maxUsers}</p>
-                    <p><strong>In Use:</strong> ${foundKey.inUse ? 'Yes' : 'No'}</p>
-                    <p><strong>Time Left:</strong> ${hours}h ${minutes}m ${seconds}s</p>
-                </div>
-                <button onclick="window.location.href='/unbind-key?key=${foundKey.key}'">Unbind Key</button>
+                <p><strong>Key:</strong> ${foundKey.key}</p>
+                <p><strong>Expires In:</strong> <span id="timer">${hours}h ${minutes}m ${seconds}s</span></p>
+                <p><strong>Used By:</strong> ${foundKey.usedBy.length > 0 ? foundKey.usedBy.join(", ") : "No users currently."}</p>
+                <button onclick="unbindKey('${foundKey.key}')">Unbind Key</button>
+                <button onclick="goBack()">Go Back</button>
             </div>
+            <script>
+                function unbindKey(key) {
+                    fetch('/unbind-key', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert("Key unbound successfully.");
+                            location.reload(); // Reload the page to reflect changes
+                        } else {
+                            alert(data.message);
+                        }
+                    });
+                }
+
+                function goBack() {
+                    window.location.href = '/key-info';
+                }
+                var countDownDate = new Date().getTime() + ${timeLeft};
+                var x = setInterval(function() {
+                    var now = new Date().getTime();
+                    var distance = countDownDate - now;
+
+                    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s ";
+
+                    if (distance < 0) {
+                        clearInterval(x);
+                        document.getElementById("timer").innerHTML = "EXPIRED";
+                    }
+                }, 1000);
+            </script>
         </body>
         </html>
     `);
@@ -507,11 +537,41 @@ app.post('/unbind-key', (req, res) => {
         return res.json({ success: false, message: 'Key not found.' });
     }
 
-    foundKey.users = []; // Curăță utilizatorii
-    foundKey.inUse = false; // Resetează starea de utilizare
+    // Clear users and reset inUse status
+    foundKey.usedBy = [];
+    foundKey.inUse = false;
     saveData(KEYS_FILE, keys);
 
     res.json({ success: true, message: 'All users unbound from this key.' });
+});
+
+app.post('/addtime', (req, res) => {
+    const { key, hours } = req.body;
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.key === key);
+    if (!foundKey) {
+        return res.status(404).json({ error: 'Key not found.' });
+    }
+
+    foundKey.expiresAt += parseInt(hours) * 60 * 60 * 1000;
+    saveData(KEYS_FILE, keys);
+    res.json({ success: true, message: `Added ${hours} hours to the key.` });
+});
+
+app.post('/unbind', (req, res) => {
+    const { key } = req.body;
+    const keys = loadData(KEYS_FILE);
+
+    const foundKey = keys.find(k => k.key === key);
+    if (!foundKey) {
+        return res.status(404).json({ error: 'Key not found.' });
+    }
+
+    foundKey.usedBy = [];
+    foundKey.inUse = false;
+    saveData(KEYS_FILE, keys);
+    res.json({ success: true, message: 'Unbound all users from the key.' });
 });
 
 app.get('/script-info', (req, res) => {
@@ -644,6 +704,14 @@ function antiBypass(req, res, next) {
         }
     }
 
+if (req.path === '/key-generated' && (!userProgress || userProgress.stage < 2 || !existingKey)) {
+    return res.redirect('/');
+}
+if (existingKey && existingKey.expiresAt < Date.now()) {
+    resetProgress(ip); // Șterge progresul
+    return res.redirect('/');
+}
+
     if (referer && referer.includes("linkvertise.com")) {
         return next();
     }
@@ -679,20 +747,18 @@ function antiBypass(req, res, next) {
 
 // Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
-    const ip = getClientIp(req); // Obține IP-ul utilizatorului
-    const progress = loadData(PROGRESS_FILE); // Încarcă progresul din fișier
-
+    const ip = getClientIp(req);
+    const progress = loadData(PROGRESS_FILE);
     const userProgress = progress.find(entry => entry.ip === ip);
 
     if (!userProgress || userProgress.lastCheckpoint < 1) {
-        // Dacă progresul utilizatorului este incorect, redirecționează la pagina principală
-        return res.redirect('/');
+        return res.redirect('/'); // Redirects to home if progress is incorrect
     }
 
-    // Salvează progresul utilizatorului pentru checkpoint 2
+    // Save progress at checkpoint 2
     saveProgress(ip, 2);
 
-    res.send(`
+    res.send(
         <!DOCTYPE html>
         <html>
         <head>
@@ -726,12 +792,19 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         </head>
         <body>
             <div>
-                <h1>Basement Hub Key System | Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key">Complete Checkpoint 2</a> <!-- Al doilea Linkvertise -->
+                <h1>Checkpoint 2</h1>
+                <a href="https://link-target.net/1203734/key" id="nextStep">Complete Checkpoint 2</a>
             </div>
+            <script>
+                document.getElementById("nextStep").addEventListener("click", function() {
+                    setTimeout(function() {
+                        window.location.href = "/key-generated";
+                    }, 5000); // Redirects to /key-generated after 5 seconds
+                });
+            </script>
         </body>
         </html>
-    `);
+    );
 });
 
 app.get('/bypassbozo', (req, res) => {
@@ -751,30 +824,25 @@ app.get('/bypassbozo', (req, res) => {
 
 // După finalizarea Checkpoint 2, redirecționează către pagina key-generated
 app.get('/key-generated', antiBypass, (req, res) => {
-    const ip = getClientIp(req); // Obține IP-ul utilizatorului
-    const keys = loadData(KEYS_FILE); // Încarcă cheile
-    const progress = loadData(PROGRESS_FILE); // Încarcă progresul
+    const ip = getClientIp(req);
+    const keys = loadData(KEYS_FILE);
+    let existingKey = keys.find(key => key.ip === ip && !key.expired);
 
-    const userProgress = progress.find(entry => entry.ip === ip);
-
-    if (!userProgress || userProgress.lastCheckpoint < 2) {
-        // Dacă progresul utilizatorului nu este corect, redirecționează la pagina principală
-        return res.redirect('/');
+    if (!existingKey || existingKey.expiresAt < Date.now()) {
+        resetProgress(ip);
+        return res.redirect('/'); // Redirect to home page if key expired or not found
     }
 
-    let existingKey = keys.find(key => key.ip === ip && !key.expired); // Găsește cheia utilizatorului
-
-    if (!existingKey) {
-        // Dacă nu există o cheie, creează una nouă
-        existingKey = createKey(ip);
+    // Dacă cheia a expirat, resetează progresul și redirecționează la pagina principală
+    if (existingKey.expiresAt < Date.now()) {
+        resetProgress(ip);
+        return res.redirect('/');
     }
 
     const timeLeft = existingKey.expiresAt - Date.now();
     const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-
-    saveProgress(ip, 3); // Salvează progresul pentru key-generated
 
     res.send(`
         <!DOCTYPE html>
@@ -791,14 +859,8 @@ app.get('/key-generated', antiBypass, (req, res) => {
                     height: 100vh;
                     margin: 0;
                 }
-                h1 {
-                    color: #fff;
-                    font-size: 2.5rem;
-                }
-                p {
-                    color: #333;
-                    font-size: 1.2rem;
-                }
+                h1 { color: #fff; font-size: 2.5rem; }
+                p { color: #333; font-size: 1.2rem; }
                 a {
                     background-color: #0056b3;
                     color: white;
@@ -807,28 +869,53 @@ app.get('/key-generated', antiBypass, (req, res) => {
                     border-radius: 5px;
                     font-size: 1.2rem;
                 }
-                a:hover {
-                    background-color: #003d80;
-                }
-                .timer {
-                    font-size: 1.5rem;
-                    color: #ff0000;
-                    margin-top: 15px;
-                }
+                a:hover { background-color: #003d80; }
+                .timer { font-size: 1.5rem; color: #ff0000; margin-top: 15px; }
             </style>
         </head>
         <body>
             <div>
                 <h1>Your Generated Key</h1>
                 <p>Your new key: <strong>${existingKey.key}</strong></p>
-                <p>It will expire in: <strong>${hours}h ${minutes}m ${seconds}s</strong></p>
-                <a href="/">Home</a>
+                <p>It will expire in: <strong><span id="timer">${hours}h ${minutes}m ${seconds}s</span></strong></p>
+                <a href="/" class="reset-btn">Home</a>
             </div>
+            <script>
+                var countDownDate = new Date().getTime() + ${timeLeft};
+                setInterval(function() {
+                    var now = new Date().getTime();
+                    var distance = countDownDate - now;
+                    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                    if (distance <= 0) {
+                        document.getElementById("timer").innerHTML = "EXPIRED";
+                        location.href = '/'; // Redirecționează dacă timer-ul expiră
+                    } else {
+                        document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s";
+                    }
+                }, 1000);
+            </script>
         </body>
         </html>
     `);
 });
 
+app.post('/delete-key', (req, res) => {
+    const { key } = req.body;
+    const keys = loadData(KEYS_FILE);
+
+    const index = keys.findIndex(k => k.key === key);
+    if (index === -1) {
+        return res.status(404).json({ success: false, message: 'Key not found.' });
+    }
+
+    keys.splice(index, 1);
+    saveData(KEYS_FILE, keys);
+
+    res.json({ success: true, message: `Key "${key}" has been deleted.` });
+});
 
 // Route pentru resetarea unei chei
 app.get('/reset-key', (req, res) => {

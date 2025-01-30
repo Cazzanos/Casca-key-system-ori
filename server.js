@@ -406,7 +406,7 @@ app.get('/key-details', (req, res) => {
     const foundKey = keys.find(entry => entry.key === key);
 
     if (!foundKey) {
-        return res.status(404).send(
+        return res.status(404).send(`
             <!DOCTYPE html>
             <html>
             <head>
@@ -431,7 +431,7 @@ app.get('/key-details', (req, res) => {
                 </div>
             </body>
             </html>
-        );
+        `);
     }
 
     const timeLeft = foundKey.expiresAt - Date.now();

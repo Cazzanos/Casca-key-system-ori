@@ -10,7 +10,22 @@ const PORT = 3000;
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Fișiere pentru stocarea datelor
+app.use((req, res, next) => {
+    if (req.path === '/blacklist' || req.path.startsWith('/admin')) return next();
+    
+    const ip = getClientIp(req);
+    const blacklist = loadData(BLACKLIST_FILE);
+    
+    const isBlacklisted = blacklist.some(entry => 
+        entry.type === 'ip' && 
+        entry.value === ip && 
+        (entry.expiry === 'permanent' || entry.expiry > Date.now())
+    );
+    
+    if (isBlacklisted) return res.redirect('/blacklist');
+    next();
+});
+
 const KEYS_FILE = path.join(__dirname, 'keys.json');
 const BLACKLIST_FILE = path.join(__dirname, 'blacklist.json');
 const NOTIFICATIONS_FILE = path.join(__dirname, 'notifications.json');
@@ -26,21 +41,40 @@ if (!fs.existsSync(PROGRESS_FILE)) {
     }
 });
 
-function saveProgress(ip, checkpoint) {
+
+function saveProgress(ip, checkpointName) {
     const progressData = loadData(PROGRESS_FILE);
     let userProgress = progressData.find(entry => entry.ip === ip);
 
     if (!userProgress) {
-        userProgress = { ip: ip, lastCheckpoint: 0 };
+        userProgress = { 
+            ip: ip, 
+            checkpoints: [],
+            lastAccess: Date.now()
+        };
         progressData.push(userProgress);
     }
 
-    if (checkpoint > userProgress.lastCheckpoint) {
-        userProgress.lastCheckpoint = checkpoint;
+    if (!userProgress.checkpoints.includes(checkpointName)) {
+        userProgress.checkpoints.push(checkpointName);
     }
-
+    
+    userProgress.lastAccess = Date.now();
+    
     saveData(PROGRESS_FILE, progressData);
 }
+
+function cleanOldProgress() {
+    const progress = loadData(PROGRESS_FILE);
+    const HOUR = 3600000;
+    const cleaned = progress.filter(entry => 
+        Date.now() - entry.lastAccess < (24 * HOUR) // Keep for 24h
+    );
+    saveData(PROGRESS_FILE, cleaned);
+}
+
+// Run every hour
+setInterval(cleanOldProgress, 3600000);
 
 // Funcții pentru gestionarea datelor
 function loadData(file) {
@@ -143,30 +177,39 @@ function checkAccess(req, res, next) {
 }
 
 function blacklistIp(ip, reason) {
-    const blacklist = loadData(BLACKLIST_FILE);
-    const existingEntry = blacklist.find(entry => entry.type === 'ip' && entry.value === ip);
+    let blacklist = loadData(BLACKLIST_FILE);
+    const existingEntry = blacklist.find(entry => 
+        entry.type === 'ip' && entry.value === ip
+    );
 
-    if (existingEntry) return; // Dacă există deja, nu adaugă din nou
-
-    const blacklistId = uuidv4(); // Creează un ID unic pentru blacklist
-    blacklist.push({
-        type: 'ip',
-        value: ip,
-        reason: reason || 'No reason provided',
-        expiry: 'permanent',
-        blacklistId: blacklistId // Adaugă blacklistId
-    });
-
+    if (existingEntry) {
+        existingEntry.reason = reason || existingEntry.reason;
+        existingEntry.expiry = 'permanent';
+        existingEntry.blacklistId = existingEntry.blacklistId || generateBlacklistId();
+    } else {
+        blacklist.push({
+            type: 'ip',
+            value: ip,
+            reason: reason || 'Bypass attempt',
+            blacklistId: generateBlacklistId(),
+            expiry: 'permanent'
+        });
+    }
     saveData(BLACKLIST_FILE, blacklist);
 }
 
 function getClientIp(req) {
-    const forwarded = req.headers['x-forwarded-for'];
-    let ip = forwarded ? forwarded.split(',').shift() : req.ip;
-    if (ip.startsWith('::ffff:')) {
-        ip = ip.substring(7);
+    let ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    if (ip.includes(',')) {
+        ip = ip.split(',')[0];
     }
-    return ip;
+
+    if (ip.startsWith('::ffff:')) {
+        ip = ip.substring(7); 
+    }
+
+    return ip.trim();
 }
 
 // Funcție pentru eliminarea cheilor expirate
@@ -174,6 +217,13 @@ function removeExpiredKeys() {
     const keys = loadData(KEYS_FILE);
     const now = Date.now();
     const validKeys = keys.filter(key => key.expiresAt > now);
+
+    keys.forEach(key => {
+        if (key.expiresAt <= now) {
+            resetProgress(key.ip);
+        }
+    });
+
     saveData(KEYS_FILE, validKeys);
 }
 
@@ -185,6 +235,17 @@ function removeAllKeys() {
 // Funcție pentru generarea unui cod unic din 6 caractere pentru blacklistId
 function generateBlacklistId() {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function resetProgress(ip) {
+    const progress = loadData(PROGRESS_FILE);
+    let updatedProgress = progress.map(entry => {
+        if (entry.ip === ip) {
+            entry.checkpoints = []; // Reset checkpoints instead of removing progress
+        }
+        return entry;
+    });
+    saveData(PROGRESS_FILE, updatedProgress);
 }
 
 // Route pentru pagina principală
@@ -223,7 +284,6 @@ app.get('/', (req, res) => {
             </html>
         `);
     } else {
-        // Dacă utilizatorul nu este pe blacklist
         res.send(`
             <!DOCTYPE html>
             <html>
@@ -265,6 +325,7 @@ app.get('/', (req, res) => {
     }
 });
 
+// 🟢 FIXED: Removed duplicate script tag
 app.get('/key-info', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -332,8 +393,8 @@ app.get('/key-info', (req, res) => {
                         document.getElementById("message").innerText = "Please enter a key!";
                         return;
                     }
-                    fetch('/search-key', {
-                        method: 'POST',
+                    fetch('/search-key?key=' + encodeURIComponent(key), {
+                           method: 'GET',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ key })
                     })
@@ -370,67 +431,83 @@ app.get('/key-info', (req, res) => {
     `);
 });
 
-app.post('/search-key', (req, res) => {
+app.get('/search-key', (req, res) => {
     const { key } = req.body;
     const keys = loadData(KEYS_FILE);
-
-    const foundKey = keys.find(entry => entry.key === key);
+    const foundKey = keys.find(entry => 
+        entry.key === key && 
+        !entry.expired &&
+        (entry.expiresAt === 'permanent' || entry.expiresAt > Date.now())
+    );
 
     if (!foundKey) {
-        return res.json({ success: false, message: "Key not found or does not exist." });
+        return res.json({ 
+            success: false, 
+            message: 'Invalid or expired key' 
+        });
     }
 
-    if (foundKey.expired) {
-        return res.json({ success: false, message: "The key has expired." });
-    }
-
-    // If key is valid, redirect to key-details
     res.json({ success: true });
 });
 
 app.get('/find-my-key', (req, res) => {
     const ip = getClientIp(req);
     const keys = loadData(KEYS_FILE);
+    const userKey = keys.find(entry => 
+        entry.ip === ip && 
+        !entry.expired &&
+        (entry.expiresAt === 'permanent' || entry.expiresAt > Date.now())
+    );
 
-    const foundKey = keys.find(k => k.ip === ip && !k.expired);
-    if (foundKey) {
-        return res.json({ success: true, key: foundKey.key });
+    if (!userKey) {
+        return res.json({ 
+            success: false, 
+            message: 'No active key found for your IP' 
+        });
     }
-    res.json({ success: false, message: 'No valid key found for your IP.' });
+
+    res.json({ success: true, key: userKey.key });
+});
+
+app.get('/blacklist', (req, res) => {
+    const ip = getClientIp(req);
+    const blacklist = loadData(BLACKLIST_FILE);
+    const blacklisted = blacklist.find(entry => entry.type === 'ip' && entry.value === ip);
+
+    if (!blacklisted) {
+        return res.redirect('/');
+    }
+
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Access Denied</title>
+            <style>
+                body { display: flex; justify-content: center; align-items: center; height: 100vh; background: #333; color: #fff; font-family: Arial, sans-serif; }
+                .message { text-align: center; }
+            </style>
+        </head>
+        <body>
+            <div class="message">
+                <h1>You have been blacklisted.</h1>
+                <p>Reason: ${blacklisted.reason || 'Tried to bypass the key system'}</p>
+                <p>Blacklist ID: ${blacklisted.blacklistId}</p>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 app.get('/key-details', (req, res) => {
-    const { key } = req.query; // Get the key from the query string
-    const keys = loadData(KEYS_FILE); // Load all keys from the KEYS_FILE
-
+    const { key } = req.query;
+    const keys = loadData(KEYS_FILE);
     const foundKey = keys.find(entry => entry.key === key);
 
     if (!foundKey) {
         return res.status(404).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Key Not Found</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: #333;
-                        color: white;
-                    }
-                </style>
-            </head>
-            <body>
-                <div>
-                    <h1>Key Not Found</h1>
-                    <p>The provided key does not exist or has expired.</p>
-                </div>
-            </body>
-            </html>
+            <h1>Key Not Found</h1>
+            <p>The provided key does not exist or has expired.</p>
         `);
     }
 
@@ -462,17 +539,18 @@ app.get('/key-details', (req, res) => {
                     font-size: 1.5rem;
                     color: red;
                 }
-                button {
-                    margin-top: 15px;
-                    background-color: #0056b3;
+                .go-back {
+                    background-color: #d9534f;
                     color: white;
                     padding: 10px 20px;
+                    text-decoration: none;
                     border-radius: 5px;
-                    cursor: pointer;
-                    border: none;
+                    font-size: 1.2rem;
+                    display: inline-block;
+                    margin-top: 15px;
                 }
-                button:hover {
-                    background-color: #003d80;
+                .go-back:hover {
+                    background-color: #c9302c;
                 }
             </style>
         </head>
@@ -482,30 +560,9 @@ app.get('/key-details', (req, res) => {
                 <p><strong>Key:</strong> ${foundKey.key}</p>
                 <p><strong>Expires In:</strong> <span id="timer">${hours}h ${minutes}m ${seconds}s</span></p>
                 <p><strong>Used By:</strong> ${foundKey.usedBy.length > 0 ? foundKey.usedBy.join(", ") : "No users currently."}</p>
-                <button onclick="unbindKey('${foundKey.key}')">Unbind Key</button>
-                <button onclick="goBack()">Go Back</button>
+                <a href="/key-info" class="go-back">Go Back</a>
             </div>
             <script>
-                function unbindKey(key) {
-                    fetch('/unbind-key', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert("Key unbound successfully.");
-                            location.reload(); // Reload the page to reflect changes
-                        } else {
-                            alert(data.message);
-                        }
-                    });
-                }
-
-                function goBack() {
-                    window.location.href = '/key-info';
-                }
                 var countDownDate = new Date().getTime() + ${timeLeft};
                 var x = setInterval(function() {
                     var now = new Date().getTime();
@@ -537,9 +594,8 @@ app.post('/unbind-key', (req, res) => {
         return res.json({ success: false, message: 'Key not found.' });
     }
 
-    // Clear users and reset inUse status
-    foundKey.usedBy = [];
-    foundKey.inUse = false;
+    foundKey.users = []; // Curăță utilizatorii
+    foundKey.inUse = false; // Resetează starea de utilizare
     saveData(KEYS_FILE, keys);
 
     res.json({ success: true, message: 'All users unbound from this key.' });
@@ -678,85 +734,62 @@ app.get('/script-info', (req, res) => {
     `);
 });
 
-// Redirecționare către Linkvertise
 app.get('/redirect-to-linkvertise', (req, res) => {
     const ip = getClientIp(req);
-
-    // Salvează progresul la primul checkpoint.
-    saveProgress(ip, 1);
-
-    // Redirecționează către primul Linkvertise.
+    saveProgress(ip, 'redirect-to-linkvertise');
     res.redirect('https://link-center.net/1203734/the-basement-key1');
 });
 
 function antiBypass(req, res, next) {
     const ip = getClientIp(req);
-    const referer = req.get('Referer');
     const progress = loadData(PROGRESS_FILE);
     const userProgress = progress.find(entry => entry.ip === ip);
+    
+    const requiredCheckpoints = {
+        '/checkpoint2': ['redirect-to-linkvertise'],
+        '/key-generated': ['redirect-to-linkvertise', 'checkpoint2']
+    };
 
-    if (userProgress) {
-        if (req.path === '/checkpoint2' && userProgress.lastCheckpoint >= 1) {
-            return next();
+    // Skip if no checkpoints required for this path
+    if (!requiredCheckpoints[req.path]) return next();
+
+    const hasAllCheckpoints = requiredCheckpoints[req.path].every(cp => 
+        userProgress?.checkpoints?.includes(cp)
+    );
+
+    // Allow if checkpoints are satisfied
+    if (hasAllCheckpoints) return next();
+
+    // Check if coming from Linkvertise
+    const referer = req.get('Referer');
+    if (referer && (referer.includes("linkvertise.com") || referer.includes("link-center.net"))) {
+        // Automatically add the first checkpoint if missing
+        if (!userProgress) {
+            saveProgress(ip, 'redirect-to-linkvertise');
+        } else if (!userProgress.checkpoints.includes('redirect-to-linkvertise')) {
+            saveProgress(ip, 'redirect-to-linkvertise');
         }
-        if (req.path === '/key-generated' && userProgress.lastCheckpoint >= 2) {
-            return next();
-        }
-    }
-
-if (req.path === '/key-generated' && (!userProgress || userProgress.stage < 2 || !existingKey)) {
-    return res.redirect('/');
-}
-if (existingKey && existingKey.expiresAt < Date.now()) {
-    resetProgress(ip); // Șterge progresul
-    return res.redirect('/');
-}
-
-    if (referer && referer.includes("linkvertise.com")) {
         return next();
     }
 
-    blacklistIp(ip, 'Tried to bypass the key system');
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Access Denied</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                    background: #333;
-                    color: white;
-                }
-            </style>
-        </head>
-        <body>
-            <div>
-                <h1>Access Denied</h1>
-                <p>You have been blacklisted for attempting to bypass the system.</p>
-            </div>
-        </body>
-        </html>
-    `);
+    // Blacklist if checkpoints are missing and referrer is invalid
+    blacklistIp(ip, 'Bypass attempt');
+    return res.redirect('/blacklist');
 }
 
-// Checkpoint 2: Redirecționare către al doilea Linkvertise
 app.get('/checkpoint2', antiBypass, (req, res) => {
     const ip = getClientIp(req);
     const progress = loadData(PROGRESS_FILE);
     const userProgress = progress.find(entry => entry.ip === ip);
 
-    if (!userProgress || userProgress.lastCheckpoint < 1) {
-        return res.redirect('/'); // Redirects to home if progress is incorrect
+    if (!userProgress || 
+        !userProgress.checkpoints?.includes('redirect-to-linkvertise')
+    ) {
+        blacklistIp(ip, 'Bypassed checkpoint1');
+        return res.redirect('/blacklist');
     }
 
-    // Save progress at checkpoint 2
-    saveProgress(ip, 2);
+    saveProgress(ip, 'checkpoint2');
 
     res.send(`
         <!DOCTYPE html>
@@ -792,14 +825,14 @@ app.get('/checkpoint2', antiBypass, (req, res) => {
         </head>
         <body>
             <div>
-                <h1>Checkpoint 2</h1>
-                <a href="https://link-target.net/1203734/key" id="nextStep">Complete Checkpoint 2</a>
+                <h1>Basement Hub Key System | Checkpoint 2</h1>
+                <a href="https://link-target.net/1203734/key" id="linkvertise">Complete Checkpoint 2</a>
             </div>
             <script>
-                document.getElementById("nextStep").addEventListener("click", function() {
+                document.getElementById("linkvertise").addEventListener("click", function() {
                     setTimeout(function() {
                         window.location.href = "/key-generated";
-                    }, 5000); // Redirects to /key-generated after 5 seconds
+                    }, 2000);
                 });
             </script>
         </body>
@@ -818,31 +851,29 @@ app.get('/bypassbozo', (req, res) => {
         saveData(BLACKLIST_FILE, blacklist);
     }
 
-    // Serve the HTML file for bypass attempt
     res.sendFile(path.join(__dirname, 'public', 'bypassbozo.html'));
 });
 
-// După finalizarea Checkpoint 2, redirecționează către pagina key-generated
 app.get('/key-generated', antiBypass, (req, res) => {
-    const ip = getClientIp(req);
-    const keys = loadData(KEYS_FILE);
+const ip = getClientIp(req);
+    let keys = loadData(KEYS_FILE);
+
     let existingKey = keys.find(key => key.ip === ip && !key.expired);
 
-    if (!existingKey || existingKey.expiresAt < Date.now()) {
-        resetProgress(ip);
-        return res.redirect('/'); // Redirect to home page if key expired or not found
-    }
-
-    // Dacă cheia a expirat, resetează progresul și redirecționează la pagina principală
-    if (existingKey.expiresAt < Date.now()) {
-        resetProgress(ip);
+    // 🛠 Fix: Check if a valid key exists
+    if (!existingKey) {
         return res.redirect('/');
     }
 
     const timeLeft = existingKey.expiresAt - Date.now();
-    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+
+    // 🛠 Fix: Expired key should not regenerate
+    if (timeLeft <= 0) {
+        existingKey.expired = true;
+        saveData(KEYS_FILE, keys);
+        resetProgress(ip); // Also reset progress
+        return res.redirect('/');
+    }
 
     res.send(`
         <!DOCTYPE html>
@@ -850,50 +881,44 @@ app.get('/key-generated', antiBypass, (req, res) => {
         <head>
             <title>Your Generated Key</title>
             <style>
-                body {
-                    background: linear-gradient(to bottom, #003366, white);
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                }
+                body { background: linear-gradient(to bottom, #003366, white); font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
                 h1 { color: #fff; font-size: 2.5rem; }
                 p { color: #333; font-size: 1.2rem; }
-                a {
-                    background-color: #0056b3;
-                    color: white;
-                    padding: 10px 20px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-size: 1.2rem;
-                }
+                a { background-color: #0056b3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-size: 1.2rem; }
                 a:hover { background-color: #003d80; }
                 .timer { font-size: 1.5rem; color: #ff0000; margin-top: 15px; }
+                .container { text-align: center; }
+                .reset-btn { margin-top: 20px; background-color: #d9534f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-size: 1.2rem; }
+                .reset-btn:hover { background-color: #c9302c; }
+                .go-home { margin-top: 20px; background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-size: 1.2rem; }
+                .go-home:hover { background-color: #45a049; }
             </style>
         </head>
         <body>
-            <div>
+            <div class="container">
                 <h1>Your Generated Key</h1>
                 <p>Your new key: <strong>${existingKey.key}</strong></p>
-                <p>It will expire in: <strong><span id="timer">${hours}h ${minutes}m ${seconds}s</span></strong></p>
-                <a href="/" class="reset-btn">Home</a>
+                <p>It will expire in: <strong><span id="timer">${Math.floor(timeLeft / 3600000)}h ${(timeLeft % 3600000) / 60000}m</span></strong></p>
+                <a href="/reset-key" class="reset-btn">Reset Key</a>
+                <a href="/" class="go-home">Go Home</a>
             </div>
             <script>
                 var countDownDate = new Date().getTime() + ${timeLeft};
-                setInterval(function() {
+                var x = setInterval(function() {
                     var now = new Date().getTime();
                     var distance = countDownDate - now;
+
                     var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
                     var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
 
-                    if (distance <= 0) {
+                    document.getElementById("timer").innerHTML = hours + "h " + minutes + "m";
+
+                    if (distance < 0) {
+                        clearInterval(x);
                         document.getElementById("timer").innerHTML = "EXPIRED";
-                        location.href = '/'; // Redirecționează dacă timer-ul expiră
-                    } else {
-                        document.getElementById("timer").innerHTML = hours + "h " + minutes + "m " + seconds + "s";
+                        setTimeout(function() {
+                            window.location.href = "/";
+                        }, 1000);
                     }
                 }, 1000);
             </script>
@@ -1301,6 +1326,22 @@ app.post('/admin/add-blacklist', (req, res) => {
 
     saveData(BLACKLIST_FILE, blacklist);
     res.send('Added to blacklist successfully.');
+});
+
+app.post('/reset-all', (req, res) => {
+    const adminCode = req.query.admin_code;
+    
+    // Security check
+    if (adminCode !== 'buratiocadminboscotos') {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Reset JSON files
+    saveData(KEYS_FILE, []);
+    saveData(BLACKLIST_FILE, []);
+    saveData(PROGRESS_FILE, []);
+
+    res.json({ success: true, message: "All data has been reset." });
 });
 
 // Route pentru ștergerea de pe blacklist

@@ -37,12 +37,10 @@ app.use((req, res, next) => {
     next();
 });
 
-const DATA_PATH = '/root/basement/';
-const KEYS_FILE = path.join(DATA_PATH, 'keys.json');
-const BLACKLIST_FILE = path.join(DATA_PATH, 'blacklist.json');
-const PROGRESS_FILE = path.join(DATA_PATH, 'progress.json');
-const NOTIFICATIONS_FILE = path.join(DATA_PATH, 'notifications.json');
-const SCRIPT_FILE = path.join(DATA_PATH, 'basement.lua');
+const KEYS_FILE = path.join('keys.json');
+const BLACKLIST_FILE = path.join('blacklist.json');
+const PROGRESS_FILE = path.join('progress.json');
+const NOTIFICATIONS_FILE = path.join('notifications.json');
 
 [KEYS_FILE, BLACKLIST_FILE, NOTIFICATIONS_FILE, PROGRESS_FILE].forEach(file => {
     if (!fs.existsSync(file)) {
